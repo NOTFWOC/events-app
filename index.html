@@ -132,8 +132,9 @@ const DF=[['nameFormFr','Nom FR','s'],['nameFormEng','Nom EN','s'],['genericName
 async function getFile(p){const c=cfg(),q=c.branch?'?ref='+encodeURIComponent(c.branch):'';let r;
  try{r=await gh('contents/'+p+q)}catch(e){if(/^404/.test(e.message))return null;throw e}
  const j=await r.json();
- const text=(j.encoding==='base64'&&j.content)?b64dec(j.content):await(await gh('contents/'+p+q,{headers:{Accept:'application/vnd.github.raw+json'}})).text();
- return{text,sha:j.sha}}
+ let b64=j.encoding==='base64'?j.content:'';
+ if(!b64)b64=(await(await gh('git/blobs/'+j.sha)).json()).content;
+ return{text:b64dec(b64),sha:j.sha}}
 async function putFile(p,text,sha,msg){const c=cfg(),b={message:msg,content:b64enc(text)};if(sha)b.sha=sha;if(c.branch)b.branch=c.branch;
  return(await(await gh('contents/'+p,{method:'PUT',body:JSON.stringify(b)})).json()).content.sha}
 async function openDex(){show('dex');if(dexRaw)return;toast('Chargement du Pokédex…');
