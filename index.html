@@ -77,8 +77,8 @@ const b64enc=t=>{const b=new TextEncoder().encode(t);let s='';for(let i=0;i<b.le
 const base=()=>{const c=cfg();return `https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch||'HEAD'}/`};
 const img=n=>n?base()+'pokemon/'+encodeURIComponent(n)+(/\.\w+$/.test(n)?'':'.png'):'';
 let tt;function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.display='block';t.style.background=bad?'var(--bad)':'';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',bad?6000:2500)}
-function show(v){let view='list';
-function show(v){view=v;['list','edit','cfg','dex','dedit'].forEach(x=>$('#'+x).hidden=x!==v);$('#pub').hidden=v!=='list';$('#tabdex').textContent=(v==='dex'||v==='dedit')?'Évènements':'Pokédex'}}
+let view='list';
+function show(v){view=v;['list','edit','cfg','dex','dedit'].forEach(x=>$('#'+x).hidden=x!==v);$('#pub').hidden=v!=='list';$('#tabdex').textContent=(v==='dex'||v==='dedit')?'Évènements':'Pokédex'}
 async function gh(path,opt={}){const c=cfg();const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/${path}`,{...opt,headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json',...(opt.headers||{})}});if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,160));return r}
 async function loadEvents(){const c=cfg(),q=c.branch?'?ref='+encodeURIComponent(c.branch):'';
  const j=await(await gh('contents/events.json'+q)).json();sha=j.sha;
