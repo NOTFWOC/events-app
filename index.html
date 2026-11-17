@@ -138,9 +138,11 @@ async function putFile(p,text,sha,msg){const c=cfg(),b={message:msg,content:b64e
  return(await(await gh('contents/'+p,{method:'PUT',body:JSON.stringify(b)})).json()).content.sha}
 async function openDex(){show('dex');if(dexRaw)return;toast('Chargement du Pokédex…');
  try{const f=await getFile('pokedex.json');dexRaw=JSON.parse(f.text);dexSha=f.sha;forms=[];TY=new Set();RG=new Set();
-  for(const p of dexRaw)for(const x of p.a_formDatas||[]){forms.push(x);TY.add(x.typeA);TY.add(x.typeB);RG.add(x.region)}
+  const arr=Array.isArray(dexRaw)?dexRaw:(Object.values(dexRaw).find(Array.isArray)||[]);
+  for(const p of arr)for(const x of p.a_formDatas||[]){forms.push(x);TY.add(x.typeA);TY.add(x.typeB);RG.add(x.region)}
+  if(!forms.length)throw new Error('Format de pokedex.json inattendu (clés : '+Object.keys(dexRaw).join(', ')+')');
   const opt=s=>[...s].filter(Boolean).map(v=>`<option value="${esc(v)}">`).join('');
-  $('#dl-type').innerHTML=opt(TY);$('#dl-region').innerHTML=opt(RG);toast('Pokédex chargé ✔')}catch(e){toast(e.message,1)}}
+  $('#dl-type').innerHTML=opt(TY);$('#dl-region').innerHTML=opt(RG);toast('Pokédex chargé ✔')}catch(e){dexRaw=null;toast(e.message,1)}}
 $('#tabdex').onclick=()=>(view==='dex'||view==='dedit')?show('list'):openDex();
 $('#dcancel').onclick=()=>show('dex');
 $('#dq').addEventListener('input',e=>{const q=norm(e.target.value.trim());if(q.length<2){$('#dres').innerHTML='';return}
