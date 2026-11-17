@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14252b">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png">
+<title>Évènements PoGo</title>
+<style>
+:root{--bg:#f2f5f6;--sf:#fff;--ink:#14252b;--mut:#5b6b70;--ac:#0f7b6c;--ln:#d5dde0;--bad:#b3261e;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1a1e;--sf:#16272d;--ink:#e8eff1;--mut:#93a5ab;--ac:#3fc3ae;--ln:#2a3d44;--bad:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--ln)}
+header h1{font-size:18px;margin:0;flex:1}
+main{max-width:640px;margin:0 auto;padding:14px 14px 90px}
+button{font:inherit;color:inherit;background:var(--sf);border:1px solid var(--ln);border-radius:10px;padding:8px 12px;cursor:pointer}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+button.bad{color:var(--bad)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+input{font:inherit;width:100%;padding:10px;border:1px solid var(--ln);border-radius:10px;background:var(--sf);color:var(--ink)}
+label{display:block;margin:12px 0 4px;font-weight:600}
+ul{list-style:none;margin:0;padding:0}
+.row{display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px}
+.row span{display:block;color:var(--mut);font-size:14px}
+.empty{color:var(--mut);padding:20px 0}
+.pk{background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:10px;margin:8px 0}
+.pkh{display:flex;gap:10px;align-items:center}
+.pkh div{flex:1}.pkh small{display:block;color:var(--mut)}
+.pkh img,.pkh i,.res img{width:48px;height:48px;object-fit:contain;flex:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{padding:4px 10px;font-size:14px;border-radius:99px}
+.chip.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.res button{display:flex;gap:10px;align-items:center;width:100%;text-align:left;margin-top:6px}
+.fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;font-size:28px;padding:0}
+.bar{display:flex;gap:8px;margin-top:18px}.bar button{flex:1}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;max-width:90%;display:none;z-index:9}
+</style></head><body>
+<header><h1>Évènements PoGo</h1>
+<button id="reload" aria-label="Recharger">↻</button><button id="gear" aria-label="Réglages">⚙</button>
+<button id="pub" class="pri">Publier</button></header>
+<main>
+<section id="list"><ul id="evs"></ul><button class="fab pri" id="add" aria-label="Nouvel évènement">+</button></section>
+<section id="edit" hidden>
+<label for="f-name">Nom</label><input id="f-name">
+<label for="f-start">Début</label><input id="f-start" type="datetime-local">
+<label for="f-end">Fin</label><input id="f-end" type="datetime-local">
+<label>Pokémon</label><ul id="pks"></ul>
+<label for="q">Ajouter un Pokémon ou un costume</label><input id="q" type="search" placeholder="Nom ou ID" autocomplete="off">
+<ul id="res" class="res"></ul>
+<div class="bar"><button id="ok" class="pri">Valider</button><button id="cancel">Annuler</button><button id="del" class="bad">Supprimer</button></div>
+</section>
+<section id="cfg" hidden>
+<p>Ces réglages restent uniquement dans ce navigateur.</p>
+<label for="c-owner">Compte GitHub</label><input id="c-owner" autocapitalize="none">
+<label for="c-repo">Dépôt</label><input id="c-repo" autocapitalize="none">
+<label for="c-branch">Branche (vide = branche par défaut)</label><input id="c-branch" autocapitalize="none">
+<label for="c-token">Token GitHub</label><input id="c-token" type="password" autocomplete="off">
+<div class="bar"><button id="c-save" class="pri">Enregistrer et charger</button></div>
+</section>
+</main><div id="toast" role="status"></div>
+<script>
+const $=s=>document.querySelector(s),LS=localStorage;
+const cfg=()=>JSON.parse(LS.getItem('cfg')||'{}');
+const FLAGS=[['sauvage','Sauvage'],['raid','Raid'],['etudeTerrain','Étude'],['etudePonctuelle','Étude ponctuelle'],['encens','Encens'],['oeuf','Œuf'],['combatDynamax','Combat Dynamax'],['photobomb','Photobomb'],['leurre','Leurre'],['leurrePluvieux','Leurre pluvieux'],['leurreMagnetique','Leurre magnétique'],['leurreMoussu','Leurre moussu'],['leurreGlacial','Leurre glacial'],['pvp','PvP']];
+let events=[],sha=null,dex=[],dexById={},cur=null,curIdx=-1,dirty=false;
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const toIn=s=>{const m=/^(\d\d)\/(\d\d)\/(\d{4}) (\d\d):(\d\d)$/.exec(s||'');return m?`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}`:''};
+const fromIn=v=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/.exec(v||'');return m?`${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`:null};
+const ts=e=>{const m=/^(\d\d)\/(\d\d)\/(\d{4}) (\d\d):(\d\d)/.exec(e.startDate||e.endDate||'');return m?Date.UTC(m[3],m[2]-1,m[1],m[4],m[5]):0};
+const b64dec=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,'')),c=>c.charCodeAt(0)));
+const b64enc=t=>{const b=new TextEncoder().encode(t);let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(s)};
+const base=()=>{const c=cfg();return `https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch||'HEAD'}/`};
+const img=n=>n?base()+'pokemon/'+encodeURIComponent(n)+(/\.\w+$/.test(n)?'':'.png'):'';
+let tt;function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.display='block';t.style.background=bad?'var(--bad)':'';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',bad?6000:2500)}
+function show(v){['list','edit','cfg'].forEach(x=>$('#'+x).hidden=x!==v);$('#pub').hidden=v!=='list'}
+async function gh(path,opt={}){const c=cfg();const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/${path}`,{...opt,headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json',...(opt.headers||{})}});if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,160));return r}
+async function loadEvents(){const c=cfg(),q=c.branch?'?ref='+encodeURIComponent(c.branch):'';
+ const j=await(await gh('contents/events.json'+q)).json();sha=j.sha;
+ const txt=(j.encoding==='base64'&&j.content)?b64dec(j.content):await(await gh('contents/events.json'+q,{headers:{Accept:'application/vnd.github.raw+json'}})).text();
+ events=JSON.parse(txt);if(!Array.isArray(events))throw new Error('events.json : tableau attendu');dirty=false}
+function buildDex(raw){const arr=Array.isArray(raw)?raw:(Object.values(raw).find(Array.isArray)||[]),out=[];
+ for(const p of arr)for(const f of(p.a_formDatas||[])){const n=f.nameFormFr||f.genericName||f.nameFormEng||'',im=f.formImages||{};
+  out.push({id:f.uniqueCode,n,img:im.male||im.female||''});
+  for(const c of(f.a_costumeData||[])){const ci=c.costumeImages||{};out.push({id:c.uniqueCode,n,c:c.costumeName,img:ci.male||ci.female||''})}}
+ return out}
+function setDex(d){dex=d;dexById={};dex.forEach(x=>{x.k=norm(x.n+' '+(x.c||'')+' '+x.id);dexById[x.id]=x})}
+async function loadDex(force){if(!force){try{const s=LS.getItem('dex');if(s){setDex(JSON.parse(s));return}}catch(e){}}
+ const r=await fetch(base()+'pokedex.json');if(!r.ok)throw new Error('pokedex.json : '+r.status);
+ const d=buildDex(await r.json());setDex(d);try{LS.setItem('dex',JSON.stringify(d.map(({k,...o})=>o)))}catch(e){}}
+async function init(force){const c=cfg();if(!c.owner||!c.repo||!c.token){fillCfg();show('cfg');return}
+ try{toast('Chargement…');await Promise.all([loadEvents(),loadDex(force)]);renderList();show('list');toast('Chargé ✔')}catch(e){toast(e.message,1);renderList();show('list')}}
+function renderList(){const idx=events.map((e,i)=>i).sort((a,b)=>ts(events[b])-ts(events[a]));
+ $('#evs').innerHTML=idx.map(i=>{const e=events[i];return `<li><button class="row" onclick="openEv(${i})"><b>${esc(e.name||'(sans nom)')}</b><span>${esc(e.startDate||'?')} → ${esc(e.endDate||'?')} · ${(e.pokemons||[]).length} Pokémon</span></button></li>`}).join('')||'<li class="empty">Aucun évènement. Ajoute-en un avec le bouton +.</li>';
+ $('#pub').textContent=dirty?'Publier ●':'Publier'}
+function openEv(i){curIdx=i;cur=i<0?{id:crypto.randomUUID(),name:'',startDate:null,endDate:null,pokemons:[]}:JSON.parse(JSON.stringify(events[i]));cur.pokemons=cur.pokemons||[];
+ $('#f-name').value=cur.name||'';$('#f-start').value=toIn(cur.startDate);$('#f-end').value=toIn(cur.endDate);$('#q').value='';$('#res').innerHTML='';$('#del').hidden=i<0;renderPk();show('edit');scrollTo(0,0)}
+function renderPk(){$('#pks').innerHTML=cur.pokemons.map((p,k)=>{const d=dexById[p.pokemonId];
+ const im=d&&d.img?`<img src="${esc(img(d.img))}" loading="lazy" alt="">`:'<i></i>';
+ return `<li class="pk"><div class="pkh">${im}<div><b>${esc(p.pokemonNameFr||'?')}</b>${p.costumeName?`<small>${esc(p.costumeName)}</small>`:''}</div><button class="bad" onclick="rmPk(${k})" aria-label="Retirer">✕</button></div><div class="chips">${FLAGS.map(([f,l])=>`<button class="chip${p[f]?' on':''}" onclick="tg(${k},'${f}')">${l}</button>`).join('')}</div></li>`}).join('')||'<li class="empty">Aucun Pokémon.</li>'}
+function tg(k,f){cur.pokemons[k][f]=!cur.pokemons[k][f];renderPk()}
+function rmPk(k){cur.pokemons.splice(k,1);renderPk()}
+function addPk(id){const d=dexById[id];if(!d)return;if(cur.pokemons.some(p=>p.pokemonId===id)){toast('Déjà dans la liste',1);return}
+ const o={pokemonId:id,pokemonNameFr:d.n};if(d.c)o.costumeName=d.c;FLAGS.forEach(([f])=>o[f]=false);cur.pokemons.push(o);
+ $('#q').value='';$('#res').innerHTML='';renderPk()}
+$('#q').addEventListener('input',e=>{const q=norm(e.target.value.trim());if(q.length<2){$('#res').innerHTML='';return}
+ $('#res').innerHTML=dex.filter(x=>x.k.includes(q)).slice(0,25).map(x=>`<li><button onclick="addPk('${esc(x.id).replace(/'/g,'')}')">${x.img?`<img src="${esc(img(x.img))}" alt="">`:'<i></i>'}<span>${esc(x.n)}${x.c?' — '+esc(x.c):''}<small> ${esc(x.id)}</small></span></button></li>`).join('')||'<li class="empty">Aucun résultat.</li>'});
+$('#ok').onclick=()=>{cur.name=$('#f-name').value.trim();if(!cur.name){toast('Le nom est obligatoire',1);return}
+ const s=fromIn($('#f-start').value),e=fromIn($('#f-end').value);s?cur.startDate=s:delete cur.startDate;e?cur.endDate=e:delete cur.endDate;
+ curIdx<0?events.push(cur):events[curIdx]=cur;dirty=true;renderList();show('list')};
+$('#cancel').onclick=()=>{show('list')};
+$('#del').onclick=()=>{if(confirm('Supprimer cet évènement ?')){events.splice(curIdx,1);dirty=true;renderList();show('list')}};
+$('#add').onclick=()=>openEv(-1);
+$('#reload').onclick=()=>{if(dirty&&!confirm('Des modifications non publiées seront perdues. Recharger ?'))return;init(true)};
+$('#gear').onclick=()=>{fillCfg();show('cfg')};
+function fillCfg(){const c=cfg();['owner','repo','branch','token'].forEach(k=>$('#c-'+k).value=c[k]||'')}
+$('#c-save').onclick=()=>{const c={};['owner','repo','branch','token'].forEach(k=>c[k]=$('#c-'+k).value.trim());LS.setItem('cfg',JSON.stringify(c));LS.removeItem('dex');init(true)};
+$('#pub').onclick=async()=>{const c=cfg(),b=$('#pub');if(!dirty&&!confirm('Aucune modification. Publier quand même ?'))return;
+ b.disabled=true;try{const body={message:'Mise à jour évènements (mobile) — '+new Date().toLocaleString('fr-FR'),content:b64enc(JSON.stringify(events,null,2)+'\n'),sha};if(c.branch)body.branch=c.branch;
+  const r=await(await gh('contents/events.json',{method:'PUT',body:JSON.stringify(body)})).json();sha=r.content.sha;dirty=false;renderList();toast('Publié ✔')}
+ catch(e){toast(/^(409|422)/.test(e.message)?'Conflit : events.json a changé ailleurs. Recharge (↻) puis refais tes modifications.':e.message,1)}
+ b.disabled=false};
+addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+init(false);
+</script></body></html>
