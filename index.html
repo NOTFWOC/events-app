@@ -33,11 +33,16 @@ ul{list-style:none;margin:0;padding:0}
 .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;font-size:28px;padding:0}
 .bar{display:flex;gap:8px;margin-top:18px}.bar button{flex:1}
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;max-width:90%;display:none;z-index:9}
+.ck{display:flex;gap:8px;align-items:center;font-weight:400}.ck input{width:auto}
 </style></head><body>
 <header><h1>Évènements PoGo</h1>
-<button id="reload" aria-label="Recharger">↻</button><button id="gear" aria-label="Réglages">⚙</button>
+<button id="reload" aria-label="Recharger">↻</button><button id="tabdex">Pokédex</button><button id="gear" aria-label="Réglages">⚙</button>
 <button id="pub" class="pri">Publier</button></header>
 <main>
+<section id="dex" hidden><input id="dq" type="search" placeholder="Nom ou ID du Pokémon" autocomplete="off"><ul id="dres"></ul></section>
+<section id="dedit" hidden><h2 id="dtitle"></h2><div id="dfields"></div>
+<datalist id="dl-type"></datalist><datalist id="dl-region"></datalist>
+<div class="bar"><button id="dsave" class="pri">Enregistrer</button><button id="dcancel">Annuler</button></div></section>
 <section id="list"><ul id="evs"></ul><button class="fab pri" id="add" aria-label="Nouvel évènement">+</button></section>
 <section id="edit" hidden>
 <label for="f-name">Nom</label><input id="f-name">
@@ -72,7 +77,8 @@ const b64enc=t=>{const b=new TextEncoder().encode(t);let s='';for(let i=0;i<b.le
 const base=()=>{const c=cfg();return `https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch||'HEAD'}/`};
 const img=n=>n?base()+'pokemon/'+encodeURIComponent(n)+(/\.\w+$/.test(n)?'':'.png'):'';
 let tt;function toast(m,bad){const t=$('#toast');t.textContent=m;t.style.display='block';t.style.background=bad?'var(--bad)':'';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',bad?6000:2500)}
-function show(v){['list','edit','cfg'].forEach(x=>$('#'+x).hidden=x!==v);$('#pub').hidden=v!=='list'}
+function show(v){let view='list';
+function show(v){view=v;['list','edit','cfg','dex','dedit'].forEach(x=>$('#'+x).hidden=x!==v);$('#pub').hidden=v!=='list';$('#tabdex').textContent=(v==='dex'||v==='dedit')?'Évènements':'Pokédex'}}
 async function gh(path,opt={}){const c=cfg();const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/${path}`,{...opt,headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json',...(opt.headers||{})}});if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,160));return r}
 async function loadEvents(){const c=cfg(),q=c.branch?'?ref='+encodeURIComponent(c.branch):'';
  const j=await(await gh('contents/events.json'+q)).json();sha=j.sha;
@@ -119,7 +125,47 @@ $('#pub').onclick=async()=>{const c=cfg(),b=$('#pub');if(!dirty&&!confirm('Aucun
   const r=await(await gh('contents/events.json',{method:'PUT',body:JSON.stringify(body)})).json();sha=r.content.sha;dirty=false;renderList();toast('Publié ✔')}
  catch(e){toast(/^(409|422)/.test(e.message)?'Conflit : events.json a changé ailleurs. Recharge (↻) puis refais tes modifications.':e.message,1)}
  b.disabled=false};
-addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+addEventListener('beforeunload',e=>{if(dirty||logQueue.length){e.preventDefault();e.returnValue=''}});
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+let dexRaw=null,dexSha=null,forms=[],cf=0,logQueue=[],TY=new Set(),RG=new Set();
+const DF=[['nameFormFr','Nom FR','s'],['nameFormEng','Nom EN','s'],['genericName','Nom générique','s'],['typeA','Type 1','s'],['typeB','Type 2','s'],['baseAttack','Attaque','i'],['baseDefense','Défense','i'],['baseStamina','Endurance','i'],['heightM','Taille (m)','f'],['weightKg','Poids (kg)','f'],['stadeEvo','Stade évolution','i'],['region','Région','s'],['avalaibleInPogo','Disponible PoGo','b'],['avalaibleShiny','Shiny','b'],['shadow','Obscur','b'],['dynamax','Dynamax','b'],['tradable','Échangeable','b']];
+async function getFile(p){const c=cfg(),q=c.branch?'?ref='+encodeURIComponent(c.branch):'';let r;
+ try{r=await gh('contents/'+p+q)}catch(e){if(/^404/.test(e.message))return null;throw e}
+ const j=await r.json();
+ const text=(j.encoding==='base64'&&j.content)?b64dec(j.content):await(await gh('contents/'+p+q,{headers:{Accept:'application/vnd.github.raw+json'}})).text();
+ return{text,sha:j.sha}}
+async function putFile(p,text,sha,msg){const c=cfg(),b={message:msg,content:b64enc(text)};if(sha)b.sha=sha;if(c.branch)b.branch=c.branch;
+ return(await(await gh('contents/'+p,{method:'PUT',body:JSON.stringify(b)})).json()).content.sha}
+async function openDex(){show('dex');if(dexRaw)return;toast('Chargement du Pokédex…');
+ try{const f=await getFile('pokedex.json');dexRaw=JSON.parse(f.text);dexSha=f.sha;forms=[];TY=new Set();RG=new Set();
+  for(const p of dexRaw)for(const x of p.a_formDatas||[]){forms.push(x);TY.add(x.typeA);TY.add(x.typeB);RG.add(x.region)}
+  const opt=s=>[...s].filter(Boolean).map(v=>`<option value="${esc(v)}">`).join('');
+  $('#dl-type').innerHTML=opt(TY);$('#dl-region').innerHTML=opt(RG);toast('Pokédex chargé ✔')}catch(e){toast(e.message,1)}}
+$('#tabdex').onclick=()=>(view==='dex'||view==='dedit')?show('list'):openDex();
+$('#dcancel').onclick=()=>show('dex');
+$('#dq').addEventListener('input',e=>{const q=norm(e.target.value.trim());if(q.length<2){$('#dres').innerHTML='';return}
+ $('#dres').innerHTML=forms.map((f,i)=>[f,i]).filter(([f])=>norm((f.nameFormFr||'')+' '+(f.nameFormEng||'')+' '+f.uniqueCode).includes(q)).slice(0,30)
+ .map(([f,i])=>`<li><button class="row" onclick="editForm(${i})"><b>${esc(f.nameFormFr||f.nameFormEng)}</b><span>${esc(f.uniqueCode)} · ${esc(f.typeA)}${f.typeB&&f.typeB!=='AAUCUN'?' / '+esc(f.typeB):''}</span></button></li>`).join('')||'<li class="empty">Aucun résultat.</li>'});
+function editForm(i){cf=i;const f=forms[i];$('#dtitle').textContent=(f.nameFormFr||f.nameFormEng)+' ('+f.uniqueCode+')';
+ $('#dfields').innerHTML=DF.map(([k,l,t])=>t==='b'?`<label class="ck"><input type="checkbox" id="d-${k}"${f[k]?' checked':''}> ${l}</label>`
+ :`<label for="d-${k}">${l}</label><input id="d-${k}" value="${esc(f[k]??'')}"${t!=='s'?' inputmode="decimal"':''}${k==='typeA'||k==='typeB'?' list="dl-type"':k==='region'?' list="dl-region"':''}>`).join('');show('dedit')}
+async function flushLog(){if(!logQueue.length)return;
+ try{const cur=await getFile('pokedex-edits.json'),arr=cur?JSON.parse(cur.text):[];arr.push(...logQueue);
+  await putFile('pokedex-edits.json',JSON.stringify(arr,null,2)+'\n',cur&&cur.sha,'Corrections Pokédex (mobile)');logQueue=[];toast('Pokédex corrigé ✔')}
+ catch(e){toast('Pokédex modifié, mais le journal n’a pas été écrit ('+e.message+'). Il sera renvoyé à ta prochaine correction.',1)}}
+$('#dsave').onclick=async()=>{const f=forms[cf],ts=new Date().toISOString(),patches=[],old={};
+ try{for(const[k,l,t]of DF){const el=$('#d-'+k);let v;
+   if(t==='b')v=el.checked;else{const s=el.value.trim();
+    if(t==='s'){v=s;if(!v&&k!=='genericName')throw new Error(l+' : vide');if((k==='typeA'||k==='typeB')&&!TY.has(v))throw new Error(l+' : valeur inconnue');if(k==='region'&&!RG.has(v))throw new Error(l+' : valeur inconnue')}
+    else{v=Number(s.replace(',','.'));if(s===''||isNaN(v)||(t==='i'&&!Number.isInteger(v)))throw new Error(l+' : nombre invalide')}}
+   if(v!==f[k]&&!(f[k]===undefined&&v===''))patches.push({id:f.uniqueCode,field:k,value:v,ts})}}
+ catch(e){toast(e.message,1);return}
+ if(!patches.length){toast('Aucun changement');return}
+ patches.forEach(p=>{old[p.field]=f[p.field];f[p.field]=p.value});
+ const b=$('#dsave');b.disabled=true;
+ try{dexSha=await putFile('pokedex.json',JSON.stringify(dexRaw,null,2)+'\n',dexSha,'Correction Pokédex '+f.uniqueCode+' (mobile)')}
+ catch(e){patches.forEach(p=>old[p.field]===undefined?delete f[p.field]:f[p.field]=old[p.field]);b.disabled=false;
+  toast(/^(409|422)/.test(e.message)?'Conflit : pokedex.json a changé ailleurs. Recharge la page puis refais la correction.':e.message,1);return}
+ logQueue.push(...patches);await flushLog();b.disabled=false;show('dex')};
 init(false);
 </script></body></html>
