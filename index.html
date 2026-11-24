@@ -52,6 +52,7 @@ ul{list-style:none;margin:0;padding:0}
 <label for="q">Ajouter un Pokémon ou un costume</label><input id="q" type="search" placeholder="Nom ou ID" autocomplete="off">
 <ul id="res" class="res"></ul>
 <div class="bar"><button id="ok" class="pri">Valider</button><button id="cancel">Annuler</button><button id="del" class="bad">Supprimer</button></div>
+<div class="bar"><button id="dup" hidden>Dupliquer cet évènement</button></div>
 </section>
 <section id="cfg" hidden>
 <p>Ces réglages restent uniquement dans ce navigateur.</p>
@@ -94,15 +95,15 @@ async function loadDex(force){if(!force){try{const s=LS.getItem('dex');if(s){set
  const r=await fetch(base()+'pokedex.json');if(!r.ok)throw new Error('pokedex.json : '+r.status);
  const d=buildDex(await r.json());setDex(d);try{LS.setItem('dex',JSON.stringify(d.map(({k,...o})=>o)))}catch(e){}}
 async function init(force){const c=cfg();if(!c.owner||!c.repo||!c.token){fillCfg();show('cfg');return}
- try{toast('Chargement…');await Promise.all([loadEvents(),loadDex(force)]);renderList();show('list');toast('Chargé ✔')}catch(e){toast(e.message,1);renderList();show('list')}}
+ try{toast('Chargement…');await Promise.all([loadEvents(),loadDex(force)]);renderList();show('list');toast('Chargé ✔');restoreDraft()}catch(e){toast(e.message,1);renderList();show('list')}}
 function renderList(){const idx=events.map((e,i)=>i).sort((a,b)=>ts(events[b])-ts(events[a]));
  $('#evs').innerHTML=idx.map(i=>{const e=events[i];return `<li><button class="row" onclick="openEv(${i})"><b>${esc(e.name||'(sans nom)')}</b><span>${esc(e.startDate||'?')} → ${esc(e.endDate||'?')} · ${(e.pokemons||[]).length} Pokémon</span></button></li>`}).join('')||'<li class="empty">Aucun évènement. Ajoute-en un avec le bouton +.</li>';
  $('#pub').textContent=dirty?'Publier ●':'Publier'}
 function openEv(i){curIdx=i;cur=i<0?{id:crypto.randomUUID(),name:'',startDate:null,endDate:null,pokemons:[]}:JSON.parse(JSON.stringify(events[i]));cur.pokemons=cur.pokemons||[];
- $('#f-name').value=cur.name||'';$('#f-start').value=toIn(cur.startDate);$('#f-end').value=toIn(cur.endDate);$('#q').value='';$('#res').innerHTML='';$('#del').hidden=i<0;renderPk();show('edit');scrollTo(0,0)}
+ $('#f-name').value=cur.name||'';$('#f-start').value=toIn(cur.startDate);$('#f-end').value=toIn(cur.endDate);$('#q').value='';$('#res').innerHTML='';$('#del').hidden=i<0;$('#dup').hidden=i<0;renderPk();show('edit');scrollTo(0,0)}
 function renderPk(){$('#pks').innerHTML=cur.pokemons.map((p,k)=>{const d=dexById[p.pokemonId];
  const im=d&&d.img?`<img src="${esc(img(d.img))}" loading="lazy" alt="">`:'<i></i>';
- return `<li class="pk"><div class="pkh">${im}<div><b>${esc(p.pokemonNameFr||'?')}</b>${p.costumeName?`<small>${esc(p.costumeName)}</small>`:''}</div><button class="bad" onclick="rmPk(${k})" aria-label="Retirer">✕</button></div><div class="chips">${FLAGS.map(([f,l])=>`<button class="chip${p[f]?' on':''}" onclick="tg(${k},'${f}')">${l}</button>`).join('')}</div></li>`}).join('')||'<li class="empty">Aucun Pokémon.</li>'}
+ return `<li class="pk"><div class="pkh">${im}<div><b>${esc(p.pokemonNameFr||'?')}</b>${p.costumeName?`<small>${esc(p.costumeName)}</small>`:''}</div><button class="bad" onclick="rmPk(${k})" aria-label="Retirer">✕</button></div><div class="chips">${FLAGS.map(([f,l])=>`<button class="chip${p[f]?' on':''}" onclick="tg(${k},'${f}')">${l}</button>`).join('')}</div></li>`}).join('')||'<li class="empty">Aucun Pokémon.</li>';saveDraft()}
 function tg(k,f){cur.pokemons[k][f]=!cur.pokemons[k][f];renderPk()}
 function rmPk(k){cur.pokemons.splice(k,1);renderPk()}
 function addPk(id){const d=dexById[id];if(!d)return;if(cur.pokemons.some(p=>p.pokemonId===id)){toast('Déjà dans la liste',1);return}
@@ -112,9 +113,9 @@ $('#q').addEventListener('input',e=>{const q=norm(e.target.value.trim());if(q.le
  $('#res').innerHTML=dex.filter(x=>x.k.includes(q)).slice(0,25).map(x=>`<li><button onclick="addPk('${esc(x.id).replace(/'/g,'')}')">${x.img?`<img src="${esc(img(x.img))}" alt="">`:'<i></i>'}<span>${esc(x.n)}${x.c?' — '+esc(x.c):''}<small> ${esc(x.id)}</small></span></button></li>`).join('')||'<li class="empty">Aucun résultat.</li>'});
 $('#ok').onclick=()=>{cur.name=$('#f-name').value.trim();if(!cur.name){toast('Le nom est obligatoire',1);return}
  const s=fromIn($('#f-start').value),e=fromIn($('#f-end').value);s?cur.startDate=s:delete cur.startDate;e?cur.endDate=e:delete cur.endDate;
- curIdx<0?events.push(cur):events[curIdx]=cur;dirty=true;renderList();show('list')};
-$('#cancel').onclick=()=>{show('list')};
-$('#del').onclick=()=>{if(confirm('Supprimer cet évènement ?')){events.splice(curIdx,1);dirty=true;renderList();show('list')}};
+ curIdx<0?events.push(cur):events[curIdx]=cur;dirty=true;LS.removeItem('draft');renderList();show('list')};
+$('#cancel').onclick=()=>{LS.removeItem('draft');show('list')};
+$('#del').onclick=()=>{if(confirm('Supprimer cet évènement ?')){events.splice(curIdx,1);dirty=true;LS.removeItem('draft');renderList();show('list')}};
 $('#add').onclick=()=>openEv(-1);
 $('#reload').onclick=()=>{if(dirty&&!confirm('Des modifications non publiées seront perdues. Recharger ?'))return;init(true)};
 $('#gear').onclick=()=>{fillCfg();show('cfg')};
@@ -170,5 +171,20 @@ $('#dsave').onclick=async()=>{const f=forms[cf],ts=new Date().toISOString(),patc
  catch(e){patches.forEach(p=>old[p.field]===undefined?delete f[p.field]:f[p.field]=old[p.field]);b.disabled=false;
   toast(/^(409|422)/.test(e.message)?'Conflit : pokedex.json a changé ailleurs. Recharge la page puis refais la correction.':e.message,1);return}
  logQueue.push(...patches);await flushLog();b.disabled=false;show('dex')};
+function saveDraft(){if(view!=='edit'||!cur)return;
+ try{LS.setItem('draft',JSON.stringify({idx:curIdx,cur:{...cur,name:$('#f-name').value,startDate:fromIn($('#f-start').value),endDate:fromIn($('#f-end').value)}}))}catch(e){}}
+['#f-name','#f-start','#f-end'].forEach(s=>['input','change'].forEach(t=>$(s).addEventListener(t,saveDraft)));
+function restoreDraft(){let d;try{d=JSON.parse(LS.getItem('draft')||'null')}catch(e){}
+ if(!d||!d.cur)return;
+ if(!confirm('Reprendre le brouillon « '+(d.cur.name||'sans nom')+' » ?')){LS.removeItem('draft');return}
+ const i=d.idx>=0&&events[d.idx]?.id===d.cur.id?d.idx:(d.cur.id?events.findIndex(e=>e.id===d.cur.id):-1);
+ cur=d.cur;cur.pokemons=cur.pokemons||[];curIdx=i;
+ $('#f-name').value=cur.name||'';$('#f-start').value=toIn(cur.startDate);$('#f-end').value=toIn(cur.endDate);
+ $('#q').value='';$('#res').innerHTML='';$('#del').hidden=i<0;$('#dup').hidden=i<0;show('edit');renderPk()}
+$('#dup').onclick=()=>{const c=JSON.parse(JSON.stringify(cur));
+ c.id=crypto.randomUUID();c.name=$('#f-name').value.trim()+' (copie)';
+ c.startDate=fromIn($('#f-start').value);c.endDate=fromIn($('#f-end').value);
+ cur=c;curIdx=-1;$('#f-name').value=c.name;$('#del').hidden=true;$('#dup').hidden=true;
+ renderPk();scrollTo(0,0);toast('Copie créée : modifie puis Valide')};
 init(false);
 </script></body></html>
